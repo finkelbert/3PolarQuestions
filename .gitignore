@@ -1,6 +1,7 @@
 # data tables
 *.csv
 *.xlsx
+*.xls
 
 # unresolved code
 6)*
