@@ -1,0 +1,30 @@
+
+
+```{r}
+## clean start
+rm(list = ls())
+
+## Load required libraries 
+require(dplyr)
+library(readxl)
+
+# read raw_df and focus_df
+raw_df <- read.csv("data_tables/raw_df.csv") %>% distinct(file, t, .keep_all = TRUE)
+
+focus_df <- read_excel("data_tables/focus_df.xls")
+
+```
+
+```{r}
+# add columns focus, category and comment from focus_df, based on speaker ID
+
+raw_df$focus <- focus_df$focus[match(raw_df$speaker, focus_df$speaker)]
+raw_df$category <- focus_df$category[match(raw_df$speaker, focus_df$speaker)]
+raw_df$comment <- focus_df$comment[match(raw_df$speaker, focus_df$speaker)]
+
+```
+
+```{r write_raw_df, warning=FALSE}
+##### Write the raw data
+write.csv(raw_df, "data_tables/raw_df.csv", row.names=FALSE)
+```

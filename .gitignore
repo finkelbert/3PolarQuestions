@@ -1,10 +1,37 @@
+# data tables
+*.csv
+*.xlsx
+
+# unresolved code
+6)*
+7)*
+
+# beta workflows and local backups
+gitNo/
+
+# GitHub page
+*.yml
+
+# Preview files
+*.html
+*.pdf
+
+# Media files
+*.wav
+*.TextGrid
+*.IntensityTier
+*.Pitch
+*.PitchTier
+
+# Mac
+*.DS_Store
+
 # History files
 .Rhistory
 .Rapp.history
 
 # Session Data files
 .RData
-.RDataTmp
 
 # User-specific files
 .Ruserdata
@@ -22,8 +49,8 @@
 .Rproj.user/
 
 # produced vignettes
-vignettes/*.html
-vignettes/*.pdf
+# vignettes/*.html
+# vignettes/*.pdf
 
 # OAuth2 token, see https://github.com/hadley/httr/releases/tag/v0.3
 .httr-oauth
@@ -38,12 +65,4 @@ vignettes/*.pdf
 
 # R Environment Variables
 .Renviron
-
-# pkgdown site
-docs/
-
-# translation temp files
-po/*~
-
-# RStudio Connect folder
-rsconnect/
+.Rproj.user
