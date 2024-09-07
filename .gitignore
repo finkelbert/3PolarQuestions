@@ -4,7 +4,8 @@
 *.xls
 
 # unresolved code
-6)*
+*originalOLD.Rmd
+
 7)*
 
 # beta workflows and local backups
