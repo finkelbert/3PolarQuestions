@@ -1,0 +1,637 @@
+
+```{r clean start}
+
+# clean start
+rm(list = ls())
+
+# load required libraries
+library(tidyverse)
+require(ggplot2)
+require(tidyr)
+require(Cairo)
+require(dplyr)
+require(seewave)
+require(purrr)
+require(zoo)
+
+
+data_TV <- read_csv("data_tables/scores_df.csv")
+
+```
+
+
+```{r change inf to v}
+# change "inf" to "v" in syll_label and focus
+data_TV <- mutate(data_TV, syll_label = ifelse(syll_label == "inf-p", "v-p", syll_label))
+data_TV <- mutate(data_TV, syll_label = ifelse(syll_label == "inf-u", "v-u", syll_label))
+data_TV <- mutate(data_TV, focus = ifelse(focus == "(inf)", "(v)", focus))
+data_TV <- mutate(data_TV, focus = ifelse(focus == "Inf", "v", focus))
+
+```
+
+```{r syllable, total and relative duration}
+
+#autoSyll
+data_TV <- mutate(data_TV, autoSyll_dur = autoSyll_end - autoSyll_start)
+
+data_TV <- data_TV %>%
+  group_by(speaker) %>%
+  mutate(
+    auto_total_dur = sum(autoSyll_dur),
+    auto_rel_dur = autoSyll_dur / auto_total_dur * 5
+  )
+#
+
+
+#manual duration (from textgrids)
+data_TV <- mutate(data_TV, syll_dur = syll_end - syll_start)
+
+data_TV <- data_TV %>%
+  group_by(speaker) %>%
+  mutate(
+    total_dur = sum(syll_dur),
+    rel_dur = syll_dur / total_dur * 5
+  )
+#
+
+#### relative duration of periodicity ####
+data_TV <- data_TV %>%
+  group_by(speaker) %>%
+  mutate(
+    total_periodicity = sum(intervalDuration),
+    rel_intervalDuration = intervalDuration / total_periodicity * 5
+  )
+
+
+```
+
+
+```{r new columns to be plotted later}
+### focusCategory? Either (1) or (2)
+
+# (1): Brackets = no
+data_TV <- mutate(data_TV, focusCategory = ifelse(focus == "no" | focus == "(aux)" | focus == "(s)"| focus == "(v)"| focus == "(o)","no", focus))
+
+
+```
+
+
+
+```{r separate inquiries from C}
+
+### Exclude "inquiry"s from C
+# This works only, if there are no other comments than "inquiry", "British" or NA
+data_TV_inq <- filter(data_TV, comment == "inquiry")
+data_TV <- filter(data_TV, comment == "British" | is.na(comment))
+
+```
+
+```{r data noFocus}
+### create data_noFocus
+data_noFocus <- filter(data_TV, focusCategory == "no")
+
+# save data_noFocus as table
+# write.csv(data_noFocus, "data_tables/data_for_statistics_df.csv", row.names=FALSE)
+
+### create data_onlyFocus
+data_onlyFocus <- filter(data_TV, focusCategory != "no")
+
+```
+
+plot violins
+
+```{r plot generator all clauses together}
+
+## variables ##
+
+measureNumber <- c(1,2,3,4,5,6, 7)[3]
+# [1]=synchrony, [2]=delta f0, [3]=mass, [4]= absolute syllable duration (auto), [5]= relative syllable duration (auto),[6]=rel_intervalDuration, [7]= intervalDuration (duration in ms of periodic parts)
+
+dataSetNumber <- c(1,2,3) [2]
+# [1]=data_TV (all utterances), [2]= data_noFocus (all utterances without  narrow focus (all or only strong focus excluded; depending on settings above)), [3]= data_onlyFocus (only utterances WITH narrow focus; strong (plus mild; depending on settings above))
+
+##
+
+dataSet <- data_TV
+if (dataSetNumber == 2){
+  dataSet <- data_noFocus
+}
+if (dataSetNumber == 3){
+  dataSet <- data_onlyFocus
+}
+
+measure <- dataSet$sync_rel
+if (measureNumber == 2) {measure <- dataSet$DeltaF0_rel}
+if (measureNumber == 3) {measure <- dataSet$mass_rel}
+if (measureNumber == 4) {measure <- dataSet$autoSyll_dur}
+if (measureNumber == 5) {measure <- dataSet$auto_rel_dur}
+if (measureNumber == 6) {measure <- dataSet$rel_intervalDuration}
+if (measureNumber == 7) {measure <- dataSet$intervalDuration}
+
+limMin <- c(-18, -100, 0, 0, 0, 0, 0)[measureNumber]
+limMax <- c(18, 100, 2.5, 450, 2.5, 2.5, 450)[measureNumber]
+normLine <- c(0, 0, 1, NA, 1, 1, NA) [measureNumber]
+
+yLabel <- c("Relative synchrony", "Relative delta F0", "Relative mass", "Syllable duration (ms)", "Relative syllable duration", "Relative duration of periodic parts", "Duration of periodic parts (ms)") [measureNumber]
+
+dataTitle <- "(all focus)"
+if (dataSetNumber == 2){
+  dataTitle <- "(no narrow focus)"
+}
+if (dataSetNumber == 3){
+  dataTitle <- "(only all narrow focus)"
+}
+
+
+headTitle <- paste(yLabel, dataTitle)
+
+## colors by clause
+colors <- c("a" = "#FF0040", "b" = "#ffc40c", "c" = "#0090FF")
+
+
+plotGenerator <- ggplot(dataSet, aes(x = factor(syll_label, level = c("aux-u", "s-u", "v-p", "v-u", "o-u")), y = measure))+
+  
+  scale_x_discrete(labels= c("can\ndo", "you", "re-\nbe-", "-peat\n-lieve", "that")) +
+
+  #Violins
+  geom_violin(
+    aes(col = clause, fill = clause),
+    alpha = .1,
+    linewidth = 0.5,
+    # fill = NA,
+    position = "identity",
+    width = 1)+
+  
+  scale_fill_manual(values=c("#FF0040","#ffc40c","#0090FF"),
+                    labels=c("A: Can you repeat that?", "B: Can you believe that?", "C: Do you believe that?"),
+                    guide = "none",
+                    name="") +
+  scale_color_manual(values=c("#FF0040","#ffc40c","#0090FF"),
+                    labels=c("A: Can you repeat that?", "B: Can you believe that?", "C: Do you believe that?"),
+                    guide="none",
+                    name="") +
+  
+  # Dots
+  geom_jitter(
+          # Insert the variable (col = x), to get the plot color-coded
+          # e.g. by clause, setting, floorChange, ...
+    aes(col = clause),
+    alpha = .6,
+    position = position_jitter(width = 0.3),
+    size = 0.2)+
+  
+   scale_color_manual(values=c("#FF0040","#ffc40c","#0090FF"),
+                    labels=c("A: Can you repeat that?", "B: Can you believe that?", "C: Do you believe that?"),
+                    guide = "none",
+                    name="") +
+  
+  ### Means
+  stat_summary(aes(col = clause, fill = clause),
+               fun = "mean",
+               alpha = 1,
+               shape = 4,
+               size = 0.8
+               )+
+  scale_fill_manual(values=c("#FF0040","#ffc40c","#0090FF"),
+                    labels=c("A: Can you repeat that?", "B: Can you believe that?", "C: Do you believe that?"),
+                    # guide = "none",
+                    name="") +
+  scale_color_manual(values=c("#FF0040","#ffc40c","#0090FF"),
+                    labels=c("A: Can you repeat that?", "B: Can you believe that?", "C: Do you believe that?"),
+                    # guide = "none",
+                    name="") +
+  
+  # Labels and look
+  geom_hline(yintercept = normLine)+
+  geom_vline(xintercept = c(1.5, 2.5, 3.5, 4.5), linetype = "dotted")+
+  ylim(limMin, limMax)+
+  theme_classic()+
+  
+  # # Titel yes/no?
+  # ggtitle(headTitle)+
+  xlab("Syllable")+
+  ylab(yLabel)
+
+print(plotGenerator)
+
+
+# # --save?
+# ggsave(plotGenerator, file=paste0("result_plots/", headTitle, "_all_clauses","_Plot.pdf"), device=cairo_pdf)
+
+# #### ATTENTION ####
+# # --save in "All_Focus" folder #
+# ggsave(plotGenerator, file=paste0("result_plots/All_Focus/", headTitle, "_all_clauses","_Plot.pdf"), device=cairo_pdf)
+# ####
+
+# #### ATTENTION ####
+# # --save in "No_Focus_at_all" folder #
+# ggsave(plotGenerator, file=paste0("result_plots/No_Focus_at_all/", headTitle, "_(No focus at all)", "_all_clauses","_Plot.pdf"), device=cairo_pdf)
+# ####
+
+#### ATTENTION ####
+# # --save in "Only_all_focus" folder #
+# ggsave(plotGenerator, file=paste0("result_plots/Only_all_focus/", headTitle, "_(Only all focus)", "_all_clauses","_Plot.pdf"), device=cairo_pdf)
+# ###
+
+```
+keep (Hauke didn't use, but awesome!)
+```{r 3d plots syllable}
+
+#Which syllable?
+syllX <- c("aux-u", "s-u", "v-p", "v-u", "o-u")[1]
+#
+
+titleX <- paste("Syllable:", syllX)
+
+# Plot
+scatter3D <- data_TV %>%  filter(syll_label == syllX) %>%
+  ggplot(aes(sync_rel, DeltaF0_rel))+
+  
+  geom_jitter(aes(col = clause, fill = clause, size = mass_rel),
+              shape = 21, alpha = 0.3)+
+  
+  scale_color_manual(breaks = c("a", "b", "c"),
+                     values = c("#FF0040","#ffc40c","#0090FF"),
+                     guide = guide_legend(order = 1),
+                     name = "Clause") +
+  scale_fill_manual(breaks = c("a", "b", "c"),
+                    values = c("#FF0040","#ffc40c","#0090FF"),
+                    guide = guide_legend(order = 1),
+                    name = "Clause") +
+  
+  ## Adjust the range of points size
+  scale_radius(range = c(0, 20),
+               limits = c(0, 2.5),
+               breaks = c(0.5, 1, 1.5),
+               name="Mass"
+               ) +
+  
+  geom_vline(xintercept = 0)+
+  geom_hline(yintercept = 0)+
+  
+  xlim(-18, 18)+
+  ylim(-95, 95)+
+  
+  xlab("Synchrony")+
+  ylab(expression(Delta~"F0 (%)"))+
+  labs(title = titleX)+
+  theme_bw()+
+  theme(legend.text = element_text(size = 20),
+        legend.title = element_text(size = 20),
+        axis.title.x = element_text(size = 20),
+        axis.title.y = element_text(size = 20),
+        axis.text = element_text(size = 20),
+        text = element_text(size = 18),
+        plot.title = element_text(size = 23, hjust = 0.5),
+        plot.subtitle = element_text(size = 21, hjust = 0.5))+
+  
+  facet_wrap(~clause)
+
+
+scatter3D
+
+```
+
+```{r dur vs mass}
+### mean duration vs. mean mass (interesting especially for syllable v-u in clause a) ###
+
+# create interval_duration to get the duration of the whole utterance (all syllables) of each speaker (group by speaker)
+data_TV <- data_TV %>%
+  group_by(speaker) %>% 
+  mutate(total_duration = sum(intervalDuration)) %>%
+# create rel_duration to get the proportional length of every syllable in comparison with the whole utterance
+  group_by(speaker, syll_label) %>% 
+  mutate(rel_duration = intervalDuration / total_duration) 
+
+# just to check, if the sum of all rel_durations per speaker equals 1 (indeed they do, so the code above seems right)
+aggregate(data_TV$rel_duration, list(data_TV$speaker), FUN=sum)
+
+# get mean values for the same syllables of every clause type
+data_TV %>% group_by(clause, syll_label) %>% summarize(mean_rel_dur = mean(rel_duration))
+
+# divide mean_rel_dur (s. above) by 0.2 (one fifth; one of five syllables; Note: not every (but most) utterance has 5 syllables) to see, if the relative duration is above or below average (relative) duration (=1)
+data_TV %>% group_by(clause, syll_label) %>% summarize(mean_rel_dur_2 = mean(rel_duration)/0.2)
+
+
+# a v-u "-peat": 0.232   divided by 0.2 -->  (1.161)
+# b v-u "-lief": 0.249                       (1.247)
+# c v-U "-lief": 0.264                       (1.324)
+
+# --> The mean relative duration of syllable v-u ("-peat") in clause a is above average. But its periodic mass is slightly below average. This might be due to its non-vocalic parts [p] and [t].
+# Eventhough the mean duration of v-u is shorter in clause a (1.16) than in clauses b (1.25) and c (1.32), this alone can not explain the lower mean mass value. Whereas the mean_mass values of v-u for b (1.31) and c (1.37) are higher than the mean durations, in a the mean mass value (0.97) is lower than the mean duration.
+
+
+### Get the means of mass, synchrony, delta f0 per clause/syllable ###
+data_TV %>%
+  group_by(syll_label, clause) %>% 
+  summarize(mean_mass = mean(mass_rel), mean_synchrony = mean(sync_rel), mean_DeltaF0 = mean(DeltaF0_rel))
+  
+
+```
+run for durartions...
+```{r reduce data_TV to one row per file}
+
+### reduce data_TV to one row per file
+
+data_TV_reduced <- distinct(data_TV, speaker, .keep_all = TRUE)
+
+# reduce columns
+data_TV_reduced <- select(data_TV_reduced, -(f0_token_min:autoSyll_dur))
+# data_TV_reduced <- select(data_TV_reduced, -(massCategory:syncDetail))
+data_TV_reduced <- select(data_TV_reduced, -syll_label)
+data_TV_reduced <- select(data_TV_reduced, -auto_rel_dur)
+data_TV_reduced <- select(data_TV_reduced, -syll_dur)
+data_TV_reduced <- select(data_TV_reduced, -rel_dur)
+
+###
+
+
+# reduce data_TV_noFocus to one row per file
+data_TV_reduced_noFocus <- distinct(data_noFocus, speaker, .keep_all = TRUE)
+
+# reduce columns
+data_TV_reduced_noFocus <- select(data_TV_reduced_noFocus, -(f0_token_min:autoSyll_dur))
+# data_TV_reduced_noFocus <- select(data_TV_reduced_noFocus, -(massCategory:syncDetail))
+data_TV_reduced_noFocus <- select(data_TV_reduced_noFocus, -syll_label)
+data_TV_reduced_noFocus <- select(data_TV_reduced_noFocus, -auto_rel_dur)
+data_TV_reduced_noFocus <- select(data_TV_reduced_noFocus, -syll_dur)
+data_TV_reduced_noFocus <- select(data_TV_reduced_noFocus, -rel_dur)
+
+###
+
+# reduce data_TV_onlyFocus to one row per file
+data_TV_reduced_onlyFocus <- distinct(data_onlyFocus, speaker, .keep_all = TRUE)
+
+# reduce columns
+data_TV_reduced_onlyFocus <- select(data_TV_reduced_onlyFocus, -(f0_token_min:autoSyll_dur))
+# data_TV_reduced_onlyFocus <- select(data_TV_reduced_onlyFocus, -(massCategory:syncDetail))
+data_TV_reduced_onlyFocus <- select(data_TV_reduced_onlyFocus, -syll_label)
+data_TV_reduced_onlyFocus <- select(data_TV_reduced_onlyFocus, -auto_rel_dur)
+data_TV_reduced_onlyFocus <- select(data_TV_reduced_onlyFocus, -syll_dur)
+data_TV_reduced_onlyFocus <- select(data_TV_reduced_onlyFocus, -rel_dur) 
+
+```
+
+
+```{r histogram generator}
+# Plotting histograms (general stuff)
+
+### Which data set?
+
+### What is plotted (duration, pitch range, ...)?
+measure_G <- c(1,2,3)[3] # [1] = duration, [2] = pitch range, [3] = auto_total_dur(besser!?)
+
+
+### Mean [1] or median [2]?
+mean_or_median <- c(1, 2, 3)[3] # [1] = Mean, [2] = Median, [3] = both
+
+
+
+#
+measure <- data_TV_reduced_noFocus$total_dur
+if (measure_G == 2) {measure <- data_TV_reduced_noFocus$f0_speaker_range}
+if (measure_G == 3) {measure <- data_TV_reduced_noFocus$auto_total_dur}
+
+### Calculate mean and median and put them in an external df
+# for duration
+df_stats <-
+  data_TV_reduced_noFocus %>% 
+  group_by(clause) %>% 
+  summarize(
+    mean = mean(total_dur),
+    median = median(total_dur),
+    N = length(total_dur),
+    sd = sd(total_dur)) %>%
+  gather(key = key, value = value, mean:median)
+
+# for f0 range
+if (measure_G == 2) {
+  df_stats <-
+    data_TV_reduced_noFocus %>%
+    group_by(clause) %>%
+    summarize(
+      mean = mean(f0_speaker_range),
+      median = median(f0_speaker_range),
+      N = length(f0_speaker_range),
+      sd = sd(f0_speaker_range)) %>%
+  gather(key = key, value = value, mean:median)
+  }
+###
+
+# for auto_total_dur
+if (measure_G == 3) {
+  df_stats <-
+    data_TV_reduced_noFocus %>%
+    group_by(clause) %>%
+    summarize(
+      mean = mean(auto_total_dur),
+      median = median(auto_total_dur),
+      N = length(auto_total_dur),
+      sd = sd(auto_total_dur)) %>%
+  gather(key = key, value = value, mean:median)
+  }
+###
+
+##### Brauch ich das Folgende? (Ich glaube, nur wenn ich "key" und "value" nicht benutze)
+### Place and label of V-Line
+middle_measure <- df_stats$mean
+if (mean_or_median == 2) {middle_measure <- df_stats$median}
+#
+v_line_label <- c("Mean", "Median")[mean_or_median]
+###
+
+# For the case, that both mean and median should be depicted
+if (mean_or_median == 3)
+{middle_measure <- df_stats$mean
+middle_measure_2 <- df_stats$median
+#
+v_line_label <- "Mean"
+v_line_label_2 <- "Median"}
+###
+
+# Höchster Wert der x-Achse
+x_axis_max <- c(2000, 600, 2000)[measure_G]
+
+# "Breite" der Bins. Werte innerhalb dieser Range fallen in die gleiche Kategorie (werden zusammengezählt).
+binwidth_V <- c(50, 25, 50)[measure_G]
+
+# Titel der x-Achse
+x_label <- c("Utterance duration (ms)", "F0 range (Hz)", "Utterance duration (ms)")[measure_G]
+
+### Plot
+
+plotGenerator_G <- ggplot(data_TV_reduced_noFocus, aes(x = measure, fill = clause))+
+  geom_histogram(position = "dodge",
+                 binwidth = binwidth_V,
+                 # color = "black",
+                 alpha=0.7,
+                 boundary = 0)+
+  
+  scale_fill_manual(values=c("#FF0040","#ffc40c","#0090FF"),
+                    labels=c("A: Can you repeat that?", "B: Can you believe that?", "C: Do you believe that?"),
+                    guide = guide_legend(order = 1),
+                    name="") +
+  
+  scale_x_continuous(breaks = seq (0, x_axis_max, binwidth_V*2))+
+  # scale_fill_manual("Clause", values = c("blue", "red", "yellow"))+
+  geom_vline(data = df_stats, aes(xintercept = value, color = clause, linetype = key))+
+  
+  scale_color_manual(values=c("#FF0040","#ffc40c","#0090FF"),
+                     labels=c("A: Can you repeat that?", "B: Can you believe that?", "C: Do you believe that?"),
+                     guide = "none",
+                     name="Utterance") +
+  
+  scale_linetype_manual(values=c("solid", "dashed"),
+                        labels=c("Mean", "Median"),
+                        guide = guide_legend(order = 2),
+                        name="") +
+                      
+
+
+  labs(x=x_label, y="Count")
+  
+  
+
+print(plotGenerator_G)
+
+# #--save?
+# ggsave(plotGenerator_G, file=paste0("result_plots/", "Distribution_", x_label, "_Plot.pdf"), device=cairo_pdf)
+
+
+```
+
+
+```{r utterance duration density plot}
+## variables ##
+measure <- data_TV_reduced_noFocus$auto_total_dur
+
+## ## ##
+
+
+### Calculate mean and median for duration (auto_total_dur) and put them in an external df
+df_stats <-
+    data_TV_reduced_noFocus %>%
+    group_by(clause) %>%
+    summarize(
+      mean = mean(auto_total_dur),
+      median = median(auto_total_dur),
+      N = length(auto_total_dur),
+      sd = sd(auto_total_dur))
+
+# Which middle measure? Mean or median?
+middle_measure <- df_stats$mean
+
+
+colors <- c("a" = "#FF0040", "b" = "#ffc40c", "c" = "#0090FF")
+
+
+### Plot
+
+plotGenerator_density <- ggplot(data_TV_reduced_noFocus, aes(x = measure, fill = clause))+
+  geom_density(aes(col = clause,fill = clause),
+               alpha=.1,
+               linewidth = 0.5,
+               adjust = 1
+               ) +
+  
+  scale_x_continuous(breaks = seq(0, 1300, 100)) +
+  
+  scale_fill_manual(values=c("#FF0040","#ffc40c","#0090FF"),
+                    labels=c("A: Can you repeat that?", "B: Can you believe that?", "C: Do you believe that?"),
+                    # guide = "none",
+                    name="") +
+  scale_color_manual(values=c("#FF0040","#ffc40c","#0090FF"),
+                    labels=c("A: Can you repeat that?", "B: Can you believe that?", "C: Do you believe that?"),
+                    # guide="none",
+                    name="") +
+  
+  geom_vline(data = df_stats, aes(xintercept = middle_measure, color = clause)) +
+  
+  # xlim(0, 1500) +
+  
+  labs(x="Utterance duration (ms)", y="Density") +
+  
+  
+  theme_classic()
+  
+
+
+print(plotGenerator_density)
+
+# # --save?
+# ggsave(plotGenerator_density, file=paste0("result_plots/", "Density", "utterance_duration", "_Plot.pdf"), device=cairo_pdf)
+
+
+# #### ATTENTION ####
+# # --save in "No_Focus_at_all" folder #
+# ggsave(plotGenerator_density, file=paste0("result_plots/No_Focus_at_all/", "Density", "utterance_duration", "_(No focus at all)", "_Plot.pdf"), device=cairo_pdf)
+
+
+
+```
+
+
+
+```{r ALL FOCUS: utterance duration density plot}
+## variables ##
+measure <- data_TV_reduced$auto_total_dur
+
+## ## ##
+
+
+### Calculate mean and median for duration (auto_total_dur) and put them in an external df
+df_stats <-
+    data_TV_reduced %>%
+    group_by(clause) %>%
+    summarize(
+      mean = mean(auto_total_dur),
+      median = median(auto_total_dur),
+      N = length(auto_total_dur),
+      sd = sd(auto_total_dur))
+
+# Which middle measure? Mean or median?
+middle_measure <- df_stats$mean
+
+
+colors <- c("a" = "#FF0040", "b" = "#ffc40c", "c" = "#0090FF")
+
+
+### Plot
+
+plotGenerator_density <- ggplot(data_TV_reduced, aes(x = measure, fill = clause))+
+  geom_density(aes(col = clause,fill = clause),
+               alpha=.1,
+               linewidth = 0.5,
+               adjust = 1
+               ) +
+  
+  scale_x_continuous(breaks = seq(0, 1600, 100)) +
+  
+  scale_fill_manual(values=c("#FF0040","#ffc40c","#0090FF"),
+                    labels=c("A: Can you repeat that?", "B: Can you believe that?", "C: Do you believe that?"),
+                    # guide = "none",
+                    name="") +
+  scale_color_manual(values=c("#FF0040","#ffc40c","#0090FF"),
+                    labels=c("A: Can you repeat that?", "B: Can you believe that?", "C: Do you believe that?"),
+                    # guide="none",
+                    name="") +
+  
+  geom_vline(data = df_stats, aes(xintercept = middle_measure, color = clause)) +
+  
+  # xlim(0, 1500) +
+  
+  labs(x="Utterance duration (ms)", y="Density") +
+  
+  
+  theme_classic()
+  
+
+
+print(plotGenerator_density)
+
+# # --save?
+# ggsave(plotGenerator_density, file=paste0("result_plots/All_Focus/", "Density", "utterance_duration_(all_focus)_", "_Plot.pdf"), device=cairo_pdf)
+
+
+
+```
